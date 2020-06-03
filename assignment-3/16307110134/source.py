@@ -2,10 +2,48 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 from scipy.stats import multivariate_normal
-import collections
-import math
+
+def createData(means, covs, data_scales = None):
+    f = open("data.data", "w")
+    label_num = len(means)  # 共lable_num个类
+
+    if data_scales is None:
+        #默认一类500个数据点
+        data_scales = [500 for i in range(label_num)]
+    else:
+        #未指定类的数据点个数一律用500补齐
+        data_scales = data_scales[:min(len(data_scales), label_num)] + \
+                      [500 for i in range(min(len(data_scales), label_num), label_num)]
+
+    data_set = []
+    total_data = 0
+    for i in range(label_num):
+        total_data += data_scales[i]
+        cordinate_set_i = np.random.multivariate_normal(means[i], covs[i], data_scales[i]).T
+        label_set_i = np.full((1, data_scales[i]), i)
+        data_set_i = np.concatenate((cordinate_set_i, label_set_i))
+        data_set = data_set_i if i == 0 else np.concatenate((data_set, data_set_i), axis=1)
+
+    # 保存数据到文件
+    for j in range(total_data):
+        data = str(round(data_set[0][j], 3)) + " " + str(round(data_set[1][j], 3)) + " " + str(
+            int(data_set[2][j])) + "\n"  # 保留三位小数
+        f.write(data)
+    f.close()
+
+def loadData():
+    f = open("data.data", "r")
+    x, y = [], []
+    for line in f.readlines():
+        items = line.strip("\n").split(" ")
+        x.append(np.array([float(items[0]), float(items[1])]))
+        y.append(int(items[2]))
+    return np.array(x), np.array(y).reshape(-1, 1)
 
 def printEllipse(ax, mean, cov, color = "g", shreshold = "95"):
+    '''
+    作置信椭圆
+    '''
     # get eigenvector
     lams, lamvec = np.linalg.eig(cov)
     if shreshold == "99":
@@ -23,60 +61,6 @@ def printEllipse(ax, mean, cov, color = "g", shreshold = "95"):
                         fill=False, linestyle="-", linewidth=1, color=color)
     ax.add_patch(e)
 
-def createData(means, covs, data_scales = None):
-    f = open("data.data", "w")
-    label_num = len(means)  # 共lable_num个类
-    if data_scales is None:
-        #默认一类500个数据点
-        data_scales = [500 for i in range(label_num)]
-    else:
-        #未指定类的数据点个数一律用500补齐
-        data_scales = data_scales[:min(len(data_scales), label_num)] + \
-                      [500 for i in range(min(len(data_scales), label_num), label_num)]
-
-    data_set = []
-    total_data = 0
-    colors = "ygb"
-    fig = plt.figure()
-    ax = fig.add_subplot(1, 1, 1)
-    for i in range(label_num):
-        total_data += data_scales[i]
-        cordinate_set_i = np.random.multivariate_normal(means[i], covs[i], data_scales[i]).T
-        label_set_i = np.full((1, data_scales[i]), i)
-        data_set_i = np.concatenate((cordinate_set_i, label_set_i))
-        data_set = data_set_i if i == 0 else np.concatenate((data_set, data_set_i), axis=1)
-        #printEllipse(ax, means[i], covs[i], color="y", shreshold="95")
-        plt.plot(means[i][0], means[i][1], "x", color="red", markersize = 15)
-        plt.plot(cordinate_set_i[0], cordinate_set_i[1], '.', color=colors[i], markersize = 2)
-        plt.axis('equal')
-
-    plt.show()
-
-    # 打乱数据
-    np.random.shuffle(data_set.T)
-
-    # 保存数据到文件
-    for j in range(total_data):
-        data = str(round(data_set[0][j], 3)) + " " + str(round(data_set[1][j], 3)) + " " + str(
-            int(data_set[2][j])) + "\n"  # 保留三位小数
-        f.write(data)
-    f.close()
-
-    # 可视化
-    plt.show()
-
-
-def loadData():
-    #数据已经被打乱，需要划分训练集和测试集
-    f = open("data.data", "r")
-    x, y = [], []
-    for line in f.readlines():
-        items = line.strip("\n").split(" ")
-        x.append(np.array([float(items[0]), float(items[1])]))
-        y.append(int(items[2]))
-    return np.array(x), np.array(y).reshape(-1, 1)
-
-
 class GMM:
     def __init__(self, x, mu=None, cov=None, alpha=None, isRandom=False):
         self.k = 3
@@ -86,9 +70,8 @@ class GMM:
             self.mu = mu
         else:
             self.mu = np.zeros([self.k, self.dim])
-
-            # 随机化选择中心
             if isRandom:
+                # 随机化选择中心
                 self.mu = np.array([x[i] for i in [np.random.choice(range(x.shape[0]), self.k)]])[0]
             else:
                 # K-means++ 初始化
@@ -112,11 +95,8 @@ class GMM:
                 plt.plot(self.mu[i][0], self.mu[i][1], "x", color="red", markersize=15)
             plt.title("Initial Centers")
 
-
         self.cov = np.array([[[1., 0.], [0., 1.]]] * self.k) if cov is None else cov
-        #else: self.cov = cov
-        self.alpha = np.ones(self.k) / self.k  if alpha is None else alpha#默认各高斯分布权值均等
-        #else: self.alpha = alpha
+        self.alpha = np.ones(self.k) / self.k  if alpha is None else alpha # 默认各高斯分布权值均等
 
     def sample(self, sample_num):
         samples = np.zeros([sample_num, self.dim])
@@ -127,6 +107,7 @@ class GMM:
 
     def train(self, x, epoch = 10):
         origin_model = GMM(x, mean, cov, data_scales / np.sum(data_scales))
+
         # save train data to train.txt
         with open("train.txt", "w"): pass
 
@@ -141,9 +122,13 @@ class GMM:
                     gamma[i][j] = self.alpha[j] * multivariate_normal.pdf(x[i], self.mu[j], self.cov[j]) / gamma_sum
             for j in range(self.k):
                 self.mu[j] = np.sum(gamma[:, j].reshape((-1, 1)) * x, axis=0) / np.sum(gamma[:, j])
-                self.cov[j] = np.dot((x - self.mu[j]).T, gamma[:, j].reshape((-1, 1)) * (x - self.mu[j])) / np.sum(gamma[:, j])
+
+                # 正则化, 避免出现奇异阵
+                delta = 0.001 * np.identity(self.dim)
+                self.cov[j] = np.dot((x - self.mu[j]).T, gamma[:, j].reshape((-1, 1)) * (x - self.mu[j])) / np.sum(gamma[:, j]) + delta
+
                 self.alpha[j] = np.sum(gamma[:, j]) / N
-            #if ep % 10 == 9:
+
             with open("train.txt", "a") as f:
                 kl = gmm_kl(self, origin_model)
                 js = gmm_js(self, origin_model)
@@ -201,6 +186,7 @@ class GMM:
             epochs = len(lines)
             kls = [float(line.split()[0]) for line in lines]
             jss = [float(line.split()[1]) for line in lines]
+
         plt.plot(range(epochs), kls, label="KL")
         plt.plot(range(epochs), jss, label="JS")
         plt.legend()
@@ -234,16 +220,13 @@ def gmm_js(gmm1,gmm2):
 if __name__  ==  "__main__":
     mean = [[-1, 0], [1, 1], [0, 2]]
     cov = [[[0.1, 0], [0, 0.1]], [[0.1, 0], [0, 0.1]], [[0.1, 0], [0, 0.1]]]
-    #cov = [[[0.5, 0], [0, 0.5]], [[0.5, 0], [0, 0.5]], [[0.5, 0], [0, 0.5]]]
     data_scales = [100, 300, 500]
-    #data_scales = [10, 300, 500] #样本不均衡
-    #data_scales = [10, 30, 50] #小样本集
     createData(mean, cov, data_scales)
 
     x, y = loadData()
 
     model = GMM(x)
-    model.train(x, epoch=10)
+    model.train(x, epoch=20)
     model.evaluate(x, y, mean, cov, data_scales)
 
     origin_model = GMM(x, mean, cov, data_scales / np.sum(data_scales))
@@ -251,5 +234,6 @@ if __name__  ==  "__main__":
     js = gmm_js(model, origin_model)
     print("KL散度(GMM与原始分布):{0}".format(kl))
     print("Jensen-Shannon散度(GMM与原始分布):{0}".format(js))
+
 
 
